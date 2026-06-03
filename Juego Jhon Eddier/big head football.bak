@@ -1,0 +1,433 @@
+#lang racket
+
+(require 2htdp/universe)
+(require 2htdp/image)
+
+;; ================================================
+;; CONFIGURACIÓN
+;; ================================================
+
+(define WIDTH  1000)
+(define HEIGHT  500)
+(define FLOOR   420)
+(define GRAVITY  0.55)
+(define FRICTION 0.988)
+(define PLAYER-SPEED  7)
+(define JUMP-SPEED  -17)
+(define BALL-RADIUS  14)
+(define HEAD-RADIUS  36)
+(define BODY-H       30)
+(define BODY-W       16)
+(define MAX-SPEED  20)
+(define GOAL-POST-X  20)
+(define GOAL-HEIGHT 115)
+(define GOAL-TOP    (- FLOOR GOAL-HEIGHT))
+(define GOAL-ANIM 90)
+
+;; ================================================
+;; ESTRUCTURAS
+;; ================================================
+
+(struct player (x y vx vy left? right? kick? score color) #:transparent)
+(struct ball   (x y vx vy) #:transparent)
+(struct world  (p1 p2 ball goal-timer) #:transparent)
+
+;; ================================================
+;; UTILIDADES
+;; ================================================
+
+(define (clamp v lo hi) (max lo (min hi v)))
+
+(define (dist x1 y1 x2 y2)
+  (sqrt (+ (sqr (- x2 x1)) (sqr (- y2 y1)))))
+
+(define (head-cx p) (player-x p))
+(define (head-cy p) (- (player-y p) BODY-H HEAD-RADIUS))
+
+;; ================================================
+;;
+;;  🖼️🖼️🖼️  ZONA DE IMÁGENES — REEMPLAZAR AQUÍ  🖼️🖼️🖼️
+;;
+;; ================================================
+
+;; ------------------------------------------------
+;; IMAGEN DEL JUGADOR 1 (azul) — PLACEHOLDER
+;; ------------------------------------------------
+;; Actualmente dibuja: círculo grande + rectángulo de color sólido
+;;
+;; Para reemplazar con una imagen real:
+;;   1. Guarda tu imagen como "jugador_azul.png" en la misma
+;;      carpeta que este archivo .rkt
+;;   2. Comenta todo el bloque (define (player-image color) ...)
+;;   3. Reemplaza el cuerpo por:
+;;
+;;  (define PLAYER1-IMG (bitmap/file "jugador_azul.png"))
+;;  (define PLAYER2-IMG (bitmap/file "jugador_rojo.png"))
+;;
+;;   4. En la función draw (al final del archivo) cambia:
+;;      (player-image (player-color p1))  →  PLAYER1-IMG
+;;      (player-image (player-color p2))  →  PLAYER2-IMG
+;;
+;; TAMAÑO RECOMENDADO de la imagen:
+;;   Ancho: ~90px  (HEAD-RADIUS*2 + margen)
+;;   Alto:  ~110px (HEAD-RADIUS*2 + BODY-H + margen)
+;;   El "punto de los pies" debe estar al fondo de la imagen.
+;;   Formato: PNG con fondo transparente (alpha)
+;;
+;; IMPORTANTE: el jugador 1 mira hacia la derecha (→)
+;;             el jugador 2 mira hacia la izquierda (←)
+;;             usa (flip-horizontal PLAYER1-IMG) para el jugador 2
+;; ------------------------------------------------
+
+(define (player-image color)
+  ;; <<< PLACEHOLDER — reemplazar este bloque completo >>>
+  (let* ([head   (circle HEAD-RADIUS "solid" color)]
+         [ring   (circle HEAD-RADIUS "outline" "black")]
+         [eye    (overlay (circle 3 "solid" "black")
+                          (circle 7 "solid" "white"))]
+         [eyes   (beside eye (rectangle 14 1 "solid" color) eye)]
+         [mouth  (rectangle 20 5 "solid" "black")]
+         [cheek  (circle 5 "solid" (make-color 255 160 160))]
+         [cheeks (beside cheek (rectangle 28 1 "solid" color) cheek)]
+         [face   (overlay/offset mouth  0  13
+                   (overlay/offset cheeks 0   5
+                   (overlay/offset eyes   0  -8
+                   (overlay ring head))))]
+         [body   (overlay (rectangle BODY-W BODY-H "outline" "black")
+                          (rectangle BODY-W BODY-H "solid" color))])
+    (above face body)))
+
+;; ------------------------------------------------
+;; IMAGEN DEL BALÓN — PLACEHOLDER
+;; ------------------------------------------------
+;; Actualmente dibuja: círculo negro con punto blanco
+;;
+;; Para reemplazar con una imagen real:
+;;   1. Guarda tu imagen como "balon.png"
+;;   2. Reemplaza las líneas de abajo por:
+;;
+;;  (define BALL-IMG (bitmap/file "balon.png"))
+;;
+;; TAMAÑO RECOMENDADO:
+;;   ~30x30 px  (BALL-RADIUS * 2 + margen)
+;;   Formato: PNG con fondo transparente
+;;   El centro visual debe coincidir con el centro geométrico
+;; ------------------------------------------------
+
+(define BALL-IMG
+  ;; <<< PLACEHOLDER — reemplazar por (bitmap/file "balon.png") >>>
+  (overlay
+   (circle 5 "solid" "white")
+   (circle BALL-RADIUS "solid" "black")))
+
+;; ------------------------------------------------
+;; FONDO / CAMPO — PLACEHOLDER
+;; ------------------------------------------------
+;; Actualmente dibuja: césped con líneas y porterías en código
+;;
+;; Para reemplazar con una imagen real:
+;;   1. Guarda tu imagen del campo como "campo.png"
+;;      (debe ser exactamente WIDTH x HEIGHT = 1000x500 px)
+;;   2. Comenta todo el bloque (define BACKGROUND (let* ...))
+;;   3. Escribe en su lugar:
+;;
+;;  (define BACKGROUND (bitmap/file "campo.png"))
+;;
+;; CONTENIDO RECOMENDADO para la imagen del campo:
+;;   - Gradas/público arriba (zona oscura o con sprites de fans)
+;;   - Césped verde desde y=305 hasta y=500 (GOAL-TOP hasta FLOOR)
+;;   - Línea central vertical
+;;   - Círculo central
+;;   - Porterías a izquierda (x=0–20) y derecha (x=980–1000)
+;;   - El área de portería: desde y=305 (GOAL-TOP) hasta y=420 (FLOOR)
+;;
+;; Si quieres mantener el fondo en código pero añadir una imagen
+;; de gradas/fondo, puedes usar:
+;;   (bitmap/file "gradas.png") como primera capa y luego
+;;   encima dibujar el césped y las líneas con add-line
+;; ------------------------------------------------
+
+(define BACKGROUND
+  ;; <<< PLACEHOLDER — reemplazar por (bitmap/file "campo.png") >>>
+  (let* ([s (empty-scene WIDTH HEIGHT (make-color 50 80 30))]
+         [s (place-image
+              (rectangle WIDTH (+ (- HEIGHT GOAL-TOP) 5) "solid" (make-color 34 139 34))
+              (/ WIDTH 2) (+ GOAL-TOP (/ (- HEIGHT GOAL-TOP) 2)) s)]
+         [s (add-line s 0 FLOOR WIDTH FLOOR "white")]
+         [s (add-line s (/ WIDTH 2) GOAL-TOP (/ WIDTH 2) HEIGHT "white")]
+         [s (place-image
+              (overlay (circle 65 "outline" "white") (circle 5 "solid" "white"))
+              (/ WIDTH 2) (- FLOOR 58) s)]
+         ;; portería izquierda
+         [s (add-line s GOAL-POST-X GOAL-TOP GOAL-POST-X FLOOR "white")]
+         [s (add-line s 0 GOAL-TOP GOAL-POST-X GOAL-TOP "white")]
+         [s (add-line s 0 (+ GOAL-TOP 28) GOAL-POST-X FLOOR "gray")]
+         [s (add-line s 0 (+ GOAL-TOP 60) GOAL-POST-X FLOOR "gray")]
+         [s (add-line s 0 (+ GOAL-TOP 92) GOAL-POST-X FLOOR "gray")]
+         ;; portería derecha
+         [s (add-line s (- WIDTH GOAL-POST-X) GOAL-TOP (- WIDTH GOAL-POST-X) FLOOR "white")]
+         [s (add-line s (- WIDTH GOAL-POST-X) GOAL-TOP WIDTH GOAL-TOP "white")]
+         [s (add-line s (- WIDTH GOAL-POST-X) FLOOR WIDTH (+ GOAL-TOP 28) "gray")]
+         [s (add-line s (- WIDTH GOAL-POST-X) FLOOR WIDTH (+ GOAL-TOP 60) "gray")]
+         [s (add-line s (- WIDTH GOAL-POST-X) FLOOR WIDTH (+ GOAL-TOP 92) "gray")])
+    s))
+
+;; ------------------------------------------------
+;; TEXTO DEL MARCADOR — PLACEHOLDER
+;; ------------------------------------------------
+;; En la función draw, el marcador usa (text ...) de Racket.
+;; Si quieres un panel/imagen personalizada para el marcador:
+;;
+;;  (define SCOREBOARD-BG (bitmap/file "marcador.png"))
+;;
+;; Y en draw reemplaza el place-image del score-img por
+;; una versión que use tu imagen de fondo del marcador.
+;; ------------------------------------------------
+
+;; ================================================
+;; ESTADO INICIAL
+;; ================================================
+
+(define (make-world p1score p2score)
+  (world
+   (player 220 FLOOR 0 0 #f #f #f p1score "blue")
+   (player 780 FLOOR 0 0 #f #f #f p2score "red")
+   (ball 500 280 0 0)
+   0))
+
+(define INITIAL-WORLD (make-world 0 0))
+
+;; ================================================
+;; FÍSICA: COLISIÓN PELOTA–JUGADOR
+;; ================================================
+
+(define (collide-ball-player b p)
+  (define bx  (ball-x b))
+  (define by  (ball-y b))
+  (define hx  (head-cx p))
+  (define hy  (head-cy p))
+  (define dx  (- bx hx))
+  (define dy  (- by hy))
+  (define d   (sqrt (+ (sqr dx) (sqr dy))))
+  (define md  (+ BALL-RADIUS HEAD-RADIUS))
+  (if (and (< d md) (> d 0.01))
+      (let* ([nx  (/ dx d)]
+             [ny  (/ dy d)]
+             [rvx (- (ball-vx b) (player-vx p))]
+             [rvy (- (ball-vy b) (player-vy p))]
+             [dot (+ (* rvx nx) (* rvy ny))]
+             [e   1.3]
+             [imp (if (< dot 0) (* (- e) dot) 0)]
+             [nvx (clamp (+ (ball-vx b) (* imp nx)) (- MAX-SPEED) MAX-SPEED)]
+             [nvy (clamp (+ (ball-vy b) (* imp ny)) (- MAX-SPEED) MAX-SPEED)]
+             [ovl (* 1.05 (- md d))]
+             [nx2 (+ bx (* nx ovl))]
+             [ny2 (+ by (* ny ovl))])
+        (struct-copy ball b [x nx2] [y ny2] [vx nvx] [vy nvy]))
+      b))
+
+;; ================================================
+;; PATADA POTENTE
+;; ================================================
+
+(define (apply-power-kick p b)
+  (if (and (player-kick? p)
+           (< (dist (head-cx p) (head-cy p) (ball-x b) (ball-y b)) 75))
+      (let* ([dx  (- (ball-x b) (head-cx p))]
+             [dy  (- (ball-y b) (head-cy p))]
+             [d   (max 1 (sqrt (+ (sqr dx) (sqr dy))))]
+             [nx  (/ dx d)]
+             [ny  (/ dy d)]
+             [pow 19])
+        (struct-copy ball b
+                     [vx (clamp (* nx pow) (- MAX-SPEED) MAX-SPEED)]
+                     [vy (clamp (+ (* ny pow) -4) (- MAX-SPEED) MAX-SPEED)]))
+      b))
+
+;; ================================================
+;; ACTUALIZACIÓN JUGADOR
+;; ================================================
+
+(define (update-player p)
+  (define vx
+    (cond [(player-left? p)  (- PLAYER-SPEED)]
+          [(player-right? p) PLAYER-SPEED]
+          [else 0]))
+  (define vy (+ (player-vy p) GRAVITY))
+  (define nx (clamp (+ (player-x p) vx) 50 (- WIDTH 50)))
+  (define ny (+ (player-y p) vy))
+  (if (>= ny FLOOR)
+      (struct-copy player p [x nx] [y FLOOR] [vx vx] [vy 0])
+      (struct-copy player p [x nx] [y ny]    [vx vx] [vy vy])))
+
+;; ================================================
+;; ACTUALIZACIÓN PELOTA
+;; ================================================
+
+(define (update-ball b)
+  (define vy  (+ (ball-vy b) GRAVITY))
+  (define nx  (+ (ball-x b) (ball-vx b)))
+  (define ny  (+ (ball-y b) vy))
+  (cond
+    [(< ny BALL-RADIUS)
+     (struct-copy ball b [x nx] [y BALL-RADIUS]
+                  [vx (* FRICTION (ball-vx b))] [vy (- vy)])]
+    [(>= ny (- FLOOR BALL-RADIUS))
+     (struct-copy ball b
+                  [x (clamp nx BALL-RADIUS (- WIDTH BALL-RADIUS))]
+                  [y (- FLOOR BALL-RADIUS)]
+                  [vx (* FRICTION (ball-vx b))]
+                  [vy (* -0.65 vy)])]
+    [(and (< nx BALL-RADIUS) (< ny GOAL-TOP))
+     (struct-copy ball b [x BALL-RADIUS] [vx (abs (ball-vx b))] [vy vy])]
+    [(and (> nx (- WIDTH BALL-RADIUS)) (< ny GOAL-TOP))
+     (struct-copy ball b [x (- WIDTH BALL-RADIUS)] [vx (- (abs (ball-vx b)))] [vy vy])]
+    [else
+     (struct-copy ball b [x nx] [y ny] [vy vy])]))
+
+;; ================================================
+;; DETECCIÓN DE GOL
+;; ================================================
+
+(define (in-left-goal? b)
+  (and (< (ball-x b) 0) (>= (ball-y b) GOAL-TOP)))
+
+(define (in-right-goal? b)
+  (and (> (ball-x b) WIDTH) (>= (ball-y b) GOAL-TOP)))
+
+;; ================================================
+;; TICK
+;; ================================================
+
+(define (tick w)
+  (cond
+    [(> (world-goal-timer w) 0)
+     (if (<= (world-goal-timer w) 1)
+         (make-world (player-score (world-p1 w))
+                     (player-score (world-p2 w)))
+         (struct-copy world w [goal-timer (- (world-goal-timer w) 1)]))]
+    [else
+     (define p1 (update-player (world-p1 w)))
+     (define p2 (update-player (world-p2 w)))
+     (define b0 (update-ball   (world-ball w)))
+     (define b1 (collide-ball-player b0 p1))
+     (define b2 (collide-ball-player b1 p2))
+     (define b3 (apply-power-kick p1 b2))
+     (define b4 (apply-power-kick p2 b3))
+     (define p1f (struct-copy player p1 [kick? #f]))
+     (define p2f (struct-copy player p2 [kick? #f]))
+     (cond
+       [(in-left-goal? b4)
+        (world p1f
+               (struct-copy player p2f [score (+ 1 (player-score p2f))])
+               b4 GOAL-ANIM)]
+       [(in-right-goal? b4)
+        (world (struct-copy player p1f [score (+ 1 (player-score p1f))])
+               p2f b4 GOAL-ANIM)]
+       [else (world p1f p2f b4 0)])]))
+
+;; ================================================
+;; CONTROLES
+;; ================================================
+
+(define (key-press w k)
+  (define p1 (world-p1 w))
+  (define p2 (world-p2 w))
+  (cond
+    [(string=? k "a")     (struct-copy world w [p1 (struct-copy player p1 [left?  #t])])]
+    [(string=? k "d")     (struct-copy world w [p1 (struct-copy player p1 [right? #t])])]
+    [(string=? k "w")
+     (if (= (player-y p1) FLOOR)
+         (struct-copy world w [p1 (struct-copy player p1 [vy JUMP-SPEED])]) w)]
+    [(string=? k " ")     (struct-copy world w [p1 (struct-copy player p1 [kick? #t])])]
+    [(string=? k "left")  (struct-copy world w [p2 (struct-copy player p2 [left?  #t])])]
+    [(string=? k "right") (struct-copy world w [p2 (struct-copy player p2 [right? #t])])]
+    [(string=? k "up")
+     (if (= (player-y p2) FLOOR)
+         (struct-copy world w [p2 (struct-copy player p2 [vy JUMP-SPEED])]) w)]
+    [(string=? k "shift") (struct-copy world w [p2 (struct-copy player p2 [kick? #t])])]
+    [else w]))
+
+(define (key-release w k)
+  (define p1 (world-p1 w))
+  (define p2 (world-p2 w))
+  (cond
+    [(string=? k "a")     (struct-copy world w [p1 (struct-copy player p1 [left?  #f])])]
+    [(string=? k "d")     (struct-copy world w [p1 (struct-copy player p1 [right? #f])])]
+    [(string=? k " ")     (struct-copy world w [p1 (struct-copy player p1 [kick?  #f])])]
+    [(string=? k "left")  (struct-copy world w [p2 (struct-copy player p2 [left?  #f])])]
+    [(string=? k "right") (struct-copy world w [p2 (struct-copy player p2 [right? #f])])]
+    [(string=? k "shift") (struct-copy world w [p2 (struct-copy player p2 [kick?  #f])])]
+    [else w]))
+
+;; ================================================
+;; DIBUJO
+;; ================================================
+
+(define (draw w)
+  (define p1 (world-p1 w))
+  (define p2 (world-p2 w))
+  (define b  (world-ball w))
+  (define gt (world-goal-timer w))
+
+  ;; -----------------------------------------------
+  ;; 🖼️ AQUÍ se colocan las imágenes de los jugadores
+  ;;    Cambia (player-image ...) por tu bitmap si ya
+  ;;    tienes los archivos PNG listos.
+  ;;    Ejemplo:
+  ;;      PLAYER1-IMG  en vez de  (player-image (player-color p1))
+  ;;      PLAYER2-IMG  en vez de  (player-image (player-color p2))
+  ;; -----------------------------------------------
+  (define scene
+    (place-image/align
+     (player-image (player-color p2)) (player-x p2) (player-y p2) "center" "bottom"
+     (place-image/align
+      (player-image (player-color p1)) (player-x p1) (player-y p1) "center" "bottom"
+      ;; -----------------------------------------------
+      ;; 🖼️ AQUÍ se coloca el balón
+      ;;    Cambia BALL-IMG si ya tienes un PNG
+      ;; -----------------------------------------------
+      (place-image BALL-IMG (ball-x b) (ball-y b)
+                   ;; -----------------------------------------------
+                   ;; 🖼️ AQUÍ está el fondo / campo
+                   ;;    Cambia BACKGROUND por (bitmap/file "campo.png")
+                   ;; -----------------------------------------------
+                   BACKGROUND))))
+
+  ;; -----------------------------------------------
+  ;; 🖼️ MARCADOR — actualmente texto plano en blanco
+  ;;    Para un marcador con imagen:
+  ;;    (place-image SCOREBOARD-BG 500 30 scene)
+  ;; -----------------------------------------------
+  (define score-img
+    (text (string-append
+           "P1  " (number->string (player-score p1))
+           "  —  "
+           (number->string (player-score p2)) "  P2")
+          28 "white"))
+
+  (define s2 (place-image score-img (/ WIDTH 2) 28 scene))
+
+  ;; -----------------------------------------------
+  ;; 🖼️ OVERLAY DE GOL — actualmente texto amarillo
+  ;;    Para reemplazar con una imagen de celebración:
+  ;;    (bitmap/file "goal_banner.png")
+  ;; -----------------------------------------------
+  (if (> gt 0)
+      (place-image
+       (overlay
+        (text "¡GOL!" 72 "yellow")
+        (rectangle 310 95 "solid" (make-color 0 0 0 190)))
+       (/ WIDTH 2) (/ HEIGHT 2) s2)
+      s2))
+
+;; ================================================
+;; LANZAR JUEGO
+;; ================================================
+
+(big-bang INITIAL-WORLD
+  (on-tick   tick 1/60)
+  (on-key    key-press)
+  (on-release key-release)
+  (to-draw   draw)
+  (name      "Big Head Football"))

@@ -1,0 +1,219 @@
+#lang racket
+(provide iniciar-futbol)
+(require 2htdp/universe)
+(require 2htdp/image)
+
+(define WIDTH  1000)
+(define HEIGHT  500)
+(define FLOOR   420)
+(define GRAVITY  0.55)
+(define FRICTION 0.982)
+(define PLAYER-SPEED  7)
+(define JUMP-SPEED  -17)
+(define BALL-RADIUS  14)
+(define HEAD-RADIUS  36)
+(define BODY-H       30)
+(define BODY-W       16)
+(define MAX-SPEED  22)
+(define GOAL-POST-X  20)
+(define GOAL-HEIGHT 115)
+(define GOAL-TOP    (- FLOOR GOAL-HEIGHT))
+(define GOAL-ANIM 90)
+
+(struct player (x y vx vy left? right? kick? score color) #:transparent)
+(struct ball   (x y vx vy) #:transparent)
+(struct world  (state p1 p2 ball goal-timer) #:transparent) 
+
+(define (clamp v lo hi) (max lo (min hi v)))
+
+(define (dist x1 y1 x2 y2)
+  (sqrt (+ (sqr (- x2 x1)) (sqr (- y2 y1)))))
+
+(define (head-cx p) (player-x p))
+(define (head-cy p) (- (player-y p) BODY-H HEAD-RADIUS))
+
+(define PLAYER1-IMG (bitmap/file "jugador_azul.png"))
+(define PLAYER2-IMG (bitmap/file "jugador_rojo.png")) 
+(define BALL-IMG    (bitmap/file "balon.png"))
+
+(define BACKGROUND
+  (let* ([s (rectangle WIDTH HEIGHT "solid" (make-color 50 80 30))]
+         [s (place-image (rectangle WIDTH (+ (- HEIGHT GOAL-TOP) 5) "solid" (make-color 34 139 34))
+                         (/ WIDTH 2) (+ GOAL-TOP (/ (- HEIGHT GOAL-TOP) 2)) s)]
+         [s (add-line s 0 FLOOR WIDTH FLOOR "white")]
+         [s (add-line s (/ WIDTH 2) GOAL-TOP (/ WIDTH 2) HEIGHT "white")]
+         [s (place-image (overlay (circle 65 "outline" "white") (circle 5 "solid" "white"))
+                         (/ WIDTH 2) (- FLOOR 58) s)]
+         [s (add-line s GOAL-POST-X GOAL-TOP GOAL-POST-X FLOOR "white")]
+         [s (add-line s 0 GOAL-TOP GOAL-POST-X GOAL-TOP "white")]
+         [s (add-line s 0 (+ GOAL-TOP 28) GOAL-POST-X FLOOR "gray")]
+         [s (add-line s 0 (+ GOAL-TOP 60) GOAL-POST-X FLOOR "gray")]
+         [s (add-line s (- WIDTH GOAL-POST-X) GOAL-TOP (- WIDTH GOAL-POST-X) FLOOR "white")]
+         [s (add-line s (- WIDTH GOAL-POST-X) GOAL-TOP WIDTH GOAL-TOP "white")]
+         [s (add-line s (- WIDTH GOAL-POST-X) FLOOR WIDTH (+ GOAL-TOP 28) "gray")]
+         [s (add-line s (- WIDTH GOAL-POST-X) FLOOR WIDTH (+ GOAL-TOP 60) "gray")])
+    s))
+
+(define (make-world state p1score p2score)
+  (world state
+         (player 220 FLOOR 0 0 #f #f #f p1score "blue")
+         (player 780 FLOOR 0 0 #f #f #f p2score "red")
+         (ball 500 200 0 0)
+         0))
+
+(define INITIAL-WORLD (make-world "menu" 0 0))
+
+(define (collide-ball-player b p)
+  (define bx (ball-x b))
+  (define by (ball-y b))
+  (define hx (head-cx p))
+  (define hy (head-cy p))
+  (define d  (dist bx by hx hy))
+  (define md (+ BALL-RADIUS HEAD-RADIUS))
+  
+  (if (and (< d md) (> d 0.01))
+      (let* ([angle (atan (- by hy) (- bx hx))] 
+                 [fuerza 8]
+                 [nvx (+ (ball-vx b) (* fuerza (cos angle)))]
+                 [nvy (+ (ball-vy b) (* fuerza (sin angle)))])
+        (struct-copy ball b
+                     [x (+ hx (* md (cos angle)))] 
+                     [y (+ hy (* md (sin angle)))]
+                     [vx (clamp nvx (- MAX-SPEED) MAX-SPEED)]
+                     [vy (clamp nvy (- MAX-SPEED) MAX-SPEED)]))
+          b))
+
+(define (apply-power-kick p b)
+  (if (player-kick? p)
+      (let* ([dir (if (string=? (player-color p) "blue") 1 -1)]
+             [pie-x (+ (player-x p) (* dir 40))]  
+             [pie-y (- (player-y p) 10)]
+             [d (dist (ball-x b) (ball-y b) pie-x pie-y)])
+        (if (< d 50) 
+            (let* ([impacto-alto? (< (ball-y b) pie-y)] 
+                   [nuevo-vx (* dir (if impacto-alto? 13 22))]
+                   [nuevo-vy (if impacto-alto? -16 -4)])
+              (struct-copy ball b [vx nuevo-vx] [vy nuevo-vy]))
+            b))
+      b))
+
+(define (update-player p)
+  (define vx (cond [(player-left? p) (- PLAYER-SPEED)]
+                   [(player-right? p) PLAYER-SPEED]
+                   [else 0]))
+  (define vy (+ (player-vy p) GRAVITY))
+  (define nx (clamp (+ (player-x p) vx) 50 (- WIDTH 50)))
+  (define ny (+ (player-y p) vy))
+  (if (>= ny FLOOR)
+      (struct-copy player p [x nx] [y FLOOR] [vx vx] [vy 0])
+      (struct-copy player p [x nx] [y ny]    [vx vx] [vy vy])))
+
+(define (update-ball b)
+  (define vy  (+ (ball-vy b) GRAVITY))
+  (define nx  (+ (ball-x b) (ball-vx b)))
+  (define ny  (+ (ball-y b) vy))
+  (cond
+    [(< ny BALL-RADIUS) 
+     (struct-copy ball b [y BALL-RADIUS] [vx (* FRICTION (ball-vx b))] [vy (- vy)])]
+    [(>= ny (- FLOOR BALL-RADIUS)) 
+     (struct-copy ball b [x (clamp nx BALL-RADIUS (- WIDTH BALL-RADIUS))]
+                  [y (- FLOOR BALL-RADIUS)] [vx (* FRICTION (ball-vx b))] [vy (* -0.65 vy)])]
+    [(and (< nx BALL-RADIUS) (< ny GOAL-TOP)) 
+     (struct-copy ball b [x BALL-RADIUS] [vx (abs (ball-vx b))] [vy vy])]
+    [(and (> nx (- WIDTH BALL-RADIUS)) (< ny GOAL-TOP)) 
+     (struct-copy ball b [x (- WIDTH BALL-RADIUS)] [vx (- (abs (ball-vx b)))] [vy vy])]
+    [else (struct-copy ball b [x nx] [y ny] [vy vy])]))
+
+(define (in-left-goal? b)  (and (< (ball-x b) GOAL-POST-X) (>= (ball-y b) GOAL-TOP)))
+(define (in-right-goal? b) (and (> (ball-x b) (- WIDTH GOAL-POST-X)) (>= (ball-y b) GOAL-TOP)))
+
+(define (tick w)
+  (if (string=? (world-state w) "menu")
+      w 
+      (cond
+        [(> (world-goal-timer w) 0)
+         (if (<= (world-goal-timer w) 1)
+             (make-world "play" (player-score (world-p1 w)) (player-score (world-p2 w)))
+             (struct-copy world w [goal-timer (- (world-goal-timer w) 1)]))]
+        [else
+         (define p1 (update-player (world-p1 w)))
+         (define p2 (update-player (world-p2 w)))
+         (define b0 (update-ball   (world-ball w)))
+         (define b1 (collide-ball-player b0 p1))
+         (define b2 (collide-ball-player b1 p2))
+         (define b3 (apply-power-kick p1 b2))
+         (define b4 (apply-power-kick p2 b3))
+         (define p1f (struct-copy player p1 [kick? #f]))
+         (define p2f (struct-copy player p2 [kick? #f]))
+         (cond
+           [(in-left-goal? b4)
+            (struct-copy world w [p1 p1f] [p2 (struct-copy player p2f [score (+ 1 (player-score p2f))])] [ball b4] [goal-timer GOAL-ANIM])]
+           [(in-right-goal? b4)
+            (struct-copy world w [p1 (struct-copy player p1f [score (+ 1 (player-score p1f))])] [p2 p2f] [ball b4] [goal-timer GOAL-ANIM])]
+           [else (struct-copy world w [p1 p1f] [p2 p2f] [ball b4])])])))
+
+(define (key-press w k)
+  (if (string=? (world-state w) "menu")
+      (if (string=? k "\r") (struct-copy world w [state "play"]) w) 
+      (let ([p1 (world-p1 w)] [p2 (world-p2 w)])
+        (cond
+          [(string=? k "a")     (struct-copy world w [p1 (struct-copy player p1 [left?  #t])])]
+          [(string=? k "d")     (struct-copy world w [p1 (struct-copy player p1 [right? #t])])]
+          [(string=? k "w")     (if (= (player-y p1) FLOOR) (struct-copy world w [p1 (struct-copy player p1 [vy JUMP-SPEED])]) w)]
+          [(string=? k " ")     (struct-copy world w [p1 (struct-copy player p1 [kick? #t])])]
+          [(string=? k "left")  (struct-copy world w [p2 (struct-copy player p2 [left?  #t])])]
+          [(string=? k "right") (struct-copy world w [p2 (struct-copy player p2 [right? #t])])]
+          [(string=? k "up")    (if (= (player-y p2) FLOOR) (struct-copy world w [p2 (struct-copy player p2 [vy JUMP-SPEED])]) w)]
+          [(string=? k "down") (struct-copy world w [p2 (struct-copy player p2 [kick? #t])])]
+          [else w]))))
+
+(define (key-release w k)
+  (if (string=? (world-state w) "menu") w
+      (let ([p1 (world-p1 w)] [p2 (world-p2 w)])
+        (cond
+          [(string=? k "a")     (struct-copy world w [p1 (struct-copy player p1 [left?  #f])])]
+          [(string=? k "d")     (struct-copy world w [p1 (struct-copy player p1 [right? #f])])]
+          [(string=? k " ")     (struct-copy world w [p1 (struct-copy player p1 [kick?  #f])])]
+          [(string=? k "left")  (struct-copy world w [p2 (struct-copy player p2 [left?  #f])])]
+          [(string=? k "right") (struct-copy world w [p2 (struct-copy player p2 [right? #f])])]
+          [(string=? k "down") (struct-copy world w [p2 (struct-copy player p2 [kick?  #f])])]
+          [else w]))))
+
+(define (draw w)
+  (if (string=? (world-state w) "menu")
+      (place-image (text "Presiona ENTER para Empezar" 30 "yellow") (/ WIDTH 2) (+ (/ HEIGHT 2) 60)
+         (place-image (text "BIG HEAD FOOTBALL" 60 "white") (/ WIDTH 2) (/ HEIGHT 2)
+            (rectangle WIDTH HEIGHT "solid" (make-color 20 40 15))))
+      
+      (let* ([p1 (world-p1 w)] [p2 (world-p2 w)] [b (world-ball w)] [gt (world-goal-timer w)])
+        (define s-p1 
+          (if (player-kick? p1)
+              (place-image (ellipse 24 14 "solid" "black") (+ (player-x p1) 30) (- (player-y p1) 8)
+                           (place-image/align PLAYER1-IMG (player-x p1) (player-y p1) "center" "bottom" BACKGROUND))
+              (place-image/align PLAYER1-IMG (player-x p1) (player-y p1) "center" "bottom" BACKGROUND)))
+        
+        (define s-p2
+          (if (player-kick? p2)
+              (place-image (ellipse 24 14 "solid" "black") (- (player-x p2) 30) (- (player-y p2) 8)
+                           (place-image/align PLAYER2-IMG (player-x p2) (player-y p2) "center" "bottom" s-p1))
+              (place-image/align PLAYER2-IMG (player-x p2) (player-y p2) "center" "bottom" s-p1)))
+        
+        (define scene-ball (place-image BALL-IMG (ball-x b) (ball-y b) s-p2))
+        
+        (define score-img
+          (text (string-append "P1  " (number->string (player-score p1)) "  —  " (number->string (player-score p2)) "  P2") 28 "white"))
+        (define s2 (place-image score-img (/ WIDTH 2) 28 scene-ball))
+        
+        (if (> gt 0)
+            (place-image (overlay (text "¡GOL!" 72 "yellow") (rectangle 310 95 "solid" (make-color 0 0 0 190))) (/ WIDTH 2) (/ HEIGHT 2) s2)
+            s2))))
+
+
+
+(define (iniciar-futbol)
+  (big-bang INITIAL-WORLD
+    (on-tick   tick 1/60)
+    (on-key    key-press)
+    (on-release key-release)
+    (to-draw   draw)
+    (name      "Big Head Football")))
