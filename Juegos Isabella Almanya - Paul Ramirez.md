@@ -21,5 +21,5 @@ Para que te dé curiosidad lo que vas a encontrar, aquí tienes una captura de p
 </p>
 
 <p align="center">
-<img width="436" height="788" alt="gallina" src="https://github.com/user-attachments/assets/d0d64aec-f7b4-49d1-b235-38b57ee3e1e4" />
+<img width="336" height="688" alt="gallina" src="https://github.com/user-attachments/assets/d0d64aec-f7b4-49d1-b235-38b57ee3e1e4" />
 </p>
