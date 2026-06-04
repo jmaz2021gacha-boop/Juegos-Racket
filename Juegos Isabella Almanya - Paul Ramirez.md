@@ -17,9 +17,9 @@ Los archivos de nuestros compañeros son demasiado pesados, se les proporcionara
 Para que te dé curiosidad lo que vas a encontrar, aquí tienes una captura de pantalla de los videojuegos en acción:
 
 <p align="center">
-<img src="C:\Users\jmaz2\OneDrive\Documentos\lineas.png" alt="Captura del juego" width="600"/>  
+<img width="951" height="1077" alt="lineas" src="https://github.com/user-attachments/assets/f078a53b-1b73-4c36-8bb1-38b5c4335ec7" />
 </p>
 
 <p align="center">
-<img src="C:\Users\jmaz2\OneDrive\Documentos\gallina.jpeg" alt="Captura del juego" width="600"/>  
+<img width="636" height="988" alt="gallina" src="https://github.com/user-attachments/assets/d0d64aec-f7b4-49d1-b235-38b57ee3e1e4" />
 </p>
