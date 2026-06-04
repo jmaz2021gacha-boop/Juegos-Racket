@@ -4,8 +4,6 @@ Bienvenido al repositorio central de nuestros proyectos de videojuegos desarroll
 
 ---
 
-## 🚀 Nuestro Logo
-
 <p align="center">
 <img width="474" height="474" alt="logo" src="https://github.com/user-attachments/assets/7ca97044-cad4-4bb9-b9d5-2d315f79a595" />
 </p>
