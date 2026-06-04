@@ -14,7 +14,7 @@ Los archivos de nuestros compañeros son demasiado pesados, se les proporcionara
 
 ## 👀 Un vistazo a los juegos
 
-Para que te dé curiosidad lo que vas a encontrar, aquí tienes una captura de pantalla de los videojuegos en acción:
+Para que te dé curiosidad lo que vas a encontrar, aquí tienes una captura de pantalla de los videojuegos creados:
 
 <p align="center">
   <img width="200" alt="WhatsApp Image 1" src="https://github.com/user-attachments/assets/55231782-5caf-435b-a3ae-7443a9ce9ac2" style="margin-right: 15px;" />
