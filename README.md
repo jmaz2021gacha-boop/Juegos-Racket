@@ -7,7 +7,7 @@ Bienvenido al repositorio central de nuestros proyectos de videojuegos desarroll
 ## 🚀 Nuestro Logo
 
 <p align="center">
-  <img src="https://download.racket-lang.org/logo.png" alt="Logo de Racket" width="200"/>
+  <img src="[https://download.racket-lang.org/logo.png](https://tse1.explicit.bing.net/th/id/OIP.n_axi7Um_VcBm3klkp8j_AHaHa?cb=thfvnextfalcon&rs=1&pid=ImgDetMain&o=7&rm=3)" alt="Logo de Racket" width="200"/>
 </p>
 
 ---
