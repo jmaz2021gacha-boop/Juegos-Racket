@@ -16,10 +16,10 @@ Los archivos de nuestros compañeros son demasiado pesados, se les proporcionara
 
 Para que te dé curiosidad lo que vas a encontrar, aquí tienes una captura de pantalla de los videojuegos en acción:
 
-<p align="center">
+<p align="left">
 <img width="351" height="477" alt="lineas" src="https://github.com/user-attachments/assets/f078a53b-1b73-4c36-8bb1-38b5c4335ec7" />
 </p>
 
-<p align="center">
+<p align="rigth">
 <img width="436" height="788" alt="gallina" src="https://github.com/user-attachments/assets/d0d64aec-f7b4-49d1-b235-38b57ee3e1e4" />
 </p>
